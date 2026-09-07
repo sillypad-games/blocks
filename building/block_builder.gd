@@ -157,6 +157,30 @@ static func _build_collision(root: Node3D, block: Block) -> void:
 	root.add_child(body)
 
 
+## Tessellation for round primitives (sphere / dome / capsule).
+##
+## These had NO segment settings, so they took Godot's SphereMesh/CapsuleMesh
+## defaults — 64 radial x 32 rings = 2,210 verts / 4,224 triangles for ONE blob,
+## against 12 triangles for a box. Measured over the 74,593 authored blocks in
+## the world: 3,200 spheres/domes/capsules are 4.3% of the blocks and 76% of the
+## triangles. The market_halls assembly alone bakes 417 spheres into 979,408
+## vertices; sky_cloud_large is 1.95M verts, 17% of every vertex in the hub, for
+## clouds no player approaches.
+##
+## Same defect class as the BoxMesh subdivide 2 -> 0 fix (108 tris -> 12) in the
+## commit right before this one — that pass checked boxes and never looked at the
+## round shapes, which are 9x worse per block.
+##
+## 24 x 12 matches the 15-degrees-per-face angular resolution CylinderMesh was
+## deliberately set to above ("removes visible line banding in the cel shader"),
+## so a sphere is no coarser per facet than a pillar already is. That is 576
+## triangles, a 7.3x cut. Going to 16 x 8 (288 tris, matching a cylinder's total)
+## saves another 6% of world triangles but at 22.5 degrees per facet, which has
+## NOT been checked against the cel bands — do that before reaching for it.
+const ROUND_RADIAL_SEGMENTS := 24
+const ROUND_RINGS := 12
+
+
 ## Build primitive mesh.
 static func _build_primitive_visual(root: Node3D, block: Block) -> void:
 	var dims := block.mesh_size if block.mesh_size != Vector3.ZERO else block.collision_size
@@ -192,17 +216,23 @@ static func _build_primitive_visual(root: Node3D, block: Block) -> void:
 			var cap := CapsuleMesh.new()
 			cap.radius = dims.x
 			cap.height = dims.y
+			cap.radial_segments = ROUND_RADIAL_SEGMENTS
+			cap.rings = ROUND_RINGS
 			mi.mesh = cap
 		BlockCategories.SHAPE_SPHERE:
 			var sphere := SphereMesh.new()
 			sphere.radius = dims.x
 			sphere.height = dims.y
+			sphere.radial_segments = ROUND_RADIAL_SEGMENTS
+			sphere.rings = ROUND_RINGS
 			mi.mesh = sphere
 		BlockCategories.SHAPE_DOME:
 			var dome := SphereMesh.new()
 			dome.radius = dims.x
 			dome.height = dims.y
 			dome.is_hemisphere = true
+			dome.radial_segments = ROUND_RADIAL_SEGMENTS
+			dome.rings = ROUND_RINGS
 			mi.mesh = dome
 		BlockCategories.SHAPE_RAMP:
 			mi.mesh = _make_ramp_mesh(dims)
