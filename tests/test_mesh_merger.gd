@@ -5,8 +5,8 @@ extends Node3D
 ##   - Basic merge: same-material meshes combined into one draw
 ##   - Material grouping: different materials → separate merged meshes
 ##   - Neuron skip: blocks with neurons excluded from merge
-##   - Extent limit: assemblies > 40m skip merge entirely
-##   - Minimum block count: < 4 blocks skip merge
+##   - Extent limit: assemblies > 40m are chunk-merged, not skipped
+##   - Minimum block count: < MIN_MERGE_BLOCKS (2) skip merge
 ##   - Face culling: touching BoxMesh internal faces removed
 ##   - Coverage threshold: small blocks don't cull large walls
 ##   - Non-box shapes: cylinders/spheres skip face culling but still merge
@@ -269,10 +269,10 @@ func _test_neuron_skip() -> void:
 	var asm := _build_assembly(blocks)
 	await get_tree().process_frame
 
-	# 3 mergeable blocks → 1 merged mesh, neuron block keeps its Mesh
+	# 3 mergeable blocks → 1 merged mesh, neuron block keeps its Mesh.
+	# MIN_MERGE_BLOCKS is 2, so 3 mergeable blocks clear the floor.
 	var merged := _count_merged_meshes(asm)
-	# 3 blocks is below MIN_MERGE_BLOCKS (4), so no merge should happen
-	_assert(merged == 0, "3 mergeable blocks (below min 4) → no merge")
+	_assert(merged == 1, "3 mergeable blocks (>= MIN_MERGE_BLOCKS=2) → 1 merged mesh")
 
 	_cleanup(asm)
 
@@ -307,7 +307,15 @@ func _test_neuron_skip() -> void:
 func _test_extent_limit() -> void:
 	_section("Extent Limit")
 
-	# Blocks spread over > 40m → skip merge entirely
+	# Blocks spread over > 40m are no longer skipped — they are bucketed into
+	# CHUNK_SIZE (16m) spatial chunks and merged per-chunk, so each merged AABB
+	# stays small enough for visibility_range culling.
+	#   x = 0, 10, 20, 30, 40, 50  →  chunk cx = floor(x / 16)
+	#   chunk 0: [0, 10]   2 blocks → merges  (>= MIN_MERGE_BLOCKS)
+	#   chunk 1: [20, 30]  2 blocks → merges
+	#   chunk 2: [40]      1 block  → below the floor, left unmerged
+	#   chunk 3: [50]      1 block  → below the floor, left unmerged
+	# So this one layout covers both chunking rules at once.
 	var blocks: Array = []
 	for i in range(6):
 		blocks.append(_make_box("spread_%d" % i, Vector3(2, 2, 2),
@@ -317,7 +325,7 @@ func _test_extent_limit() -> void:
 	await get_tree().process_frame
 
 	var merged := _count_merged_meshes(asm)
-	_assert(merged == 0, "assembly > 40m extent → no merge")
+	_assert(merged == 2, "assembly > 40m extent → chunk-merged (2 full chunks, 2 singletons skipped)")
 
 	_cleanup(asm)
 
@@ -339,17 +347,30 @@ func _test_extent_limit() -> void:
 func _test_min_block_count() -> void:
 	_section("Minimum Block Count")
 
-	# 3 blocks → below MIN_MERGE_BLOCKS → no merge
+	# 1 block → below MIN_MERGE_BLOCKS (2) → no merge. This is the only case
+	# left that actually exercises the floor; merging 1 mesh into 1 saves nothing.
 	var blocks: Array = []
-	for i in range(3):
-		blocks.append(_make_box("small_%d" % i, Vector3(2, 2, 2),
-			Vector3(i * 3, 0, 0), "wood"))
+	blocks.append(_make_box("lone", Vector3(2, 2, 2), Vector3.ZERO, "wood"))
 
 	var asm := _build_assembly(blocks)
 	await get_tree().process_frame
 
 	var merged := _count_merged_meshes(asm)
-	_assert(merged == 0, "3 blocks (< MIN_MERGE_BLOCKS=4) → no merge")
+	_assert(merged == 0, "1 block (< MIN_MERGE_BLOCKS=2) → no merge")
+
+	_cleanup(asm)
+
+	# 3 blocks → at/above MIN_MERGE_BLOCKS (2) → merge
+	blocks.clear()
+	for i in range(3):
+		blocks.append(_make_box("small_%d" % i, Vector3(2, 2, 2),
+			Vector3(i * 3, 0, 0), "wood"))
+
+	asm = _build_assembly(blocks)
+	await get_tree().process_frame
+
+	merged = _count_merged_meshes(asm)
+	_assert(merged == 1, "3 blocks (>= MIN_MERGE_BLOCKS=2) → merge triggers")
 
 	_cleanup(asm)
 
@@ -755,18 +776,22 @@ func _test_edge_cases() -> void:
 	_assert(merged == 1, "39m extent (just under 40m limit) → merge succeeds")
 	_cleanup(asm_root)
 
-	# Just over 40m → should skip
+	# Just over 40m → crosses into the chunked path rather than being skipped.
+	#   x = 0, 14, 28, 41  →  chunk cx = floor(x / 16)
+	#   chunk 0: [0, 14]  2 blocks → merges
+	#   chunk 1: [28]     1 block  → below MIN_MERGE_BLOCKS, left unmerged
+	#   chunk 2: [41]     1 block  → below MIN_MERGE_BLOCKS, left unmerged
 	var over_blocks: Array = []
 	over_blocks.append(_make_box("start", Vector3(2, 2, 2), Vector3(0, 0, 0), "wood"))
 	over_blocks.append(_make_box("mid1", Vector3(2, 2, 2), Vector3(14, 0, 0), "wood"))
 	over_blocks.append(_make_box("mid2", Vector3(2, 2, 2), Vector3(28, 0, 0), "wood"))
 	over_blocks.append(_make_box("end", Vector3(2, 2, 2), Vector3(41, 0, 0), "wood"))
-	# Extent = 41m → over 40m limit
+	# Extent = 41m → over MAX_MERGE_EXTENT, so chunk-merged
 
 	asm_root = _build_assembly(over_blocks)
 	await get_tree().process_frame
 	merged = _count_merged_meshes(asm_root)
-	_assert(merged == 0, "41m extent (over 40m limit) → merge skipped")
+	_assert(merged == 1, "41m extent (over MAX_MERGE_EXTENT) → chunk-merged, not skipped")
 	_cleanup(asm_root)
 
 

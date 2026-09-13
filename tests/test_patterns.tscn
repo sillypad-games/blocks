@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://test_patterns_scene"]
+
+[ext_resource type="Script" path="res://addons/blocks/tests/test_patterns.gd" id="1"]
+
+[node name="TestPatterns" type="Node3D"]
+script = ExtResource("1")

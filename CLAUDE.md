@@ -15,9 +15,12 @@ reference a FrogMog autoload, map, or asset path.
 same idea: a world of 150k blocks cannot afford a node per block. Both run at
 compile time, and both *free* the per-block nodes they absorb.
 
-- **A surviving `MeshInstance3D` means that block was never merged** — an assembly
-  under four blocks, an extent over 40m, or a scene visual. Freeing it anyway is
-  what made decor vanish on mobile only.
+- **A surviving `MeshInstance3D` means that block was never merged** — a group
+  under `MIN_MERGE_BLOCKS` (2), a block carrying a neuron, or a scene visual.
+  Freeing it anyway is what made decor vanish on mobile only. Note an extent over
+  `MAX_MERGE_EXTENT` (40m) does **not** skip merging: those assemblies are
+  bucketed into `CHUNK_SIZE` (16m) chunks and merged per-chunk, and each chunk is
+  then subject to the same `MIN_MERGE_BLOCKS` floor.
 - **The collision merger collapses to one body per (layer, mask, stairs) group.**
   Every shape and every layer/mask survives; the nodes do not.
 - **Neither runs in the Design Studio.** The picker raycasts against a body per
