@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://test_sdf_blender_scene"]
+
+[ext_resource type="Script" path="res://addons/blocks/tests/test_sdf_blender.gd" id="1"]
+
+[node name="TestSdfBlender" type="Node3D"]
+script = ExtResource("1")
