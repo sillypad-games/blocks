@@ -1,7 +1,7 @@
 # addons/blocks/
 
 A standalone Block primitive library for Godot 4, vendored into FrogMog as a git
-submodule (`TJ-Dev-Studio/blocks`). `README.md` covers what the library is and how
+submodule (`sillypad-games/blocks`). `README.md` covers what the library is and how
 to use it. This file holds what consuming it will not tell you.
 
 **This is a separate repository.** A change here is a commit in the blocks repo
